@@ -25,8 +25,11 @@ class TaskAttackPlayer extends TaskBase
 			$this->onEnd($ai);
 			return false;
 		}
-		$ai->mobController->setMovingTarget($ai->entity->target->x, $ai->entity->target->y, $ai->entity->target->z, $this->speedMultiplier);
-		$ai->mobController->setLookPosition($ai->entity->target->x, $ai->entity->target->y + 0.12, $ai->entity->target->z, 10, $ai->entity->getVerticalFaceSpeed());
+	if($ai->entity->closestPlayerToAttackDist>=3)
+{
+	$ai->mobController->setMovingTarget($ai->entity->target->x, $ai->entity->target->y, $ai->entity->target->z, $this->speedMultiplier);
+}	
+	$ai->mobController->setLookPosition($ai->entity->target->x, $ai->entity->target->y + 0.12, $ai->entity->target->z, 10, $ai->entity->getVerticalFaceSpeed());
 		
 		--$this->attackCounter;
 		$v1 = $ai->entity->width * $ai->entity->width * 4;
