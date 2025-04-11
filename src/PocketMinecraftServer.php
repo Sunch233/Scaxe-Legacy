@@ -12,6 +12,10 @@ class PocketMinecraftServer{
 	
 	public $doTick, $levelData, $tiles, $entities, $schedule, $scheduleCnt, $whitelist, $spawn, $difficulty, $stop, $asyncThread;
 	public static $FORCE_20_TPS = false, $KEEP_CHUNKS_LOADED = true, $PACKET_READING_LIMIT = 100;
+
+	private static ?\Threaded $sleeper = null;
+	private SleeperHandler $tickSleeper;
+
 	function __construct($name, $gamemode = SURVIVAL, $seed = false, $port = 19132, $serverip = "0.0.0.0"){
 		$this->port = (int) $port;
 		$this->doTick = true;
@@ -21,6 +25,9 @@ class PocketMinecraftServer{
 		$this->serverID = false;
 		$this->seed = $seed;
 		$this->serverip = $serverip;
+
+		$this->tickSleeper = new SleeperHandler();
+
 		$this->load();
 	}
 	
@@ -67,7 +74,7 @@ class PocketMinecraftServer{
 		$this->saveEnabled = true;
 		$this->tickMeasure = array_fill(0, 40, 0);
 		$this->setType("normal");
-		$this->interface = new MinecraftInterface("255.255.255.255", $this->port, $this->serverip);
+		$this->interface = new MinecraftInterface($this, "255.255.255.255", $this->port, $this->serverip);
 		$this->stop = false;
 		$this->ticks = 0;
 		if(!defined("NO_THREADS")){
@@ -177,7 +184,7 @@ class PocketMinecraftServer{
 	public function titleTick(){
 		$time = microtime(true);
 		if(defined("DEBUG") and DEBUG >= 0){
-			//echo "\x1b]0;NostalgiaCore " . MAJOR_VERSION . " | Online " . count($this->clients) . "/" . $this->maxClients . " | RAM " . round((memory_get_usage() / 1024) / 1024, 2) . "MB | U " . round(($this->interface->bandwidth[1] / max(1, $time - $this->interface->bandwidth[2])) / 1024, 2) . " D " . round(($this->interface->bandwidth[0] / max(1, $time - $this->interface->bandwidth[2])) / 1024, 2) . " kB/s | TPS " . $this->getTPS() . "\x07";
+			echo "\x1b]0;NostalgiaCore " . MAJOR_VERSION . " | Online " . count($this->clients) . "/" . $this->maxClients . " | RAM " . round((memory_get_usage() / 1024) / 1024, 2) . "MB | U " . round(($this->interface->bandwidth[1] / max(1, $time - $this->interface->bandwidth[2])) / 1024, 2) . " D " . round(($this->interface->bandwidth[0] / max(1, $time - $this->interface->bandwidth[2])) / 1024, 2) . " kB/s | TPS " . $this->getTPS() . "\x07";
 		}
 
 		$this->interface->bandwidth = [0, 0, $time];
@@ -474,56 +481,18 @@ class PocketMinecraftServer{
 		}
 	}
 
+	public function getTickSleeper() : SleeperHandler{
+		return $this->tickSleeper;
+	}
+
 	public function process()
 	{
-		$lastLoop = 0;
-		if(self::$FORCE_20_TPS){
-			while($this->stop === false){
-				$packetcnt = 0;
-				while($packet = $this->interface->readPacket()){
-					if($packet instanceof Packet) {
-						$this->packetHandler($packet);
-						if(++$packetcnt > self::$PACKET_READING_LIMIT){
-							ConsoleAPI::warn("Reading more than ".self::$PACKET_READING_LIMIT." packets per tick! Forcing ticking!");
-							break;
-						}
-					}
-				}
-				
-				$this->tick();
-			}
-		}else{
-			while($this->stop === false){
-				$packetcnt = 0;
-				startReadingAgain:
-				$packet = $this->interface->readPacket();
-				if($packet instanceof Packet){
-					$this->packetHandler($packet);
-					$lastLoop = 0;
-					if(++$packetcnt > self::$PACKET_READING_LIMIT){
-						ConsoleAPI::warn("Reading more than ".self::$PACKET_READING_LIMIT." packets per tick! Forcing ticking!");
-					}else{
-						goto startReadingAgain;
-					}
-				} elseif($this->tick() > 0){
-					$lastLoop = 0;
-				} else{
-					++$lastLoop;
-					if($lastLoop < 16){
-						usleep(1);
-					} elseif($lastLoop < 128){
-						usleep(100);
-					} elseif($lastLoop < 256){
-						usleep(512);
-					} else{
-						usleep(10000);
-					}
-				}
-				$this->tick();
-			}
+		//TODO remove self::$FORCE_20_TPS
+		while($this->stop === false){
+			$time = microtime(true) + 0.01;
+			$this->tick();
+			$this->tickSleeper->sleepUntil($time);
 		}
-		
-		
 	}
 
 	public function packetHandler(Packet $packet){
