@@ -13,9 +13,12 @@ class ConsoleAPI{
 	}
 
 	public function init(){
-		$this->server->schedule(2, [$this, "handle"], [], true);
 		if(!defined("NO_THREADS")){
-			self::$loop = new ConsoleLoop();
+			$consoleNotifier = new SleeperNotifier();
+			$this->server->getTickSleeper()->addNotifier($consoleNotifier, function () : void{
+				$this->handle(microtime(true));
+			});
+			self::$loop = new ConsoleLoop($consoleNotifier);
 		}
 		$this->register("help", "[page|command name]", [$this, "defaultCommands"]);
 		$this->register("status", "", [$this, "defaultCommands"]);
@@ -69,18 +72,14 @@ class ConsoleAPI{
 			return;
 		}
 		$line = self::$loop->line;
-		if($line !== false){
-			$line = preg_replace("#\\x1b\\x5b([^\\x1b]*\\x7e|[\\x40-\\x50])#", "", trim($line));
-			self::$loop->line = false;
-			$output = $this->run($line, "console");
-			if($output != ""){
-				$mes = explode("\n", trim($output));
-				foreach($mes as $m){
-					console("[CMD] " . $m);
-				}
+		$line = preg_replace("#\\x1b\\x5b([^\\x1b]*\\x7e|[\\x40-\\x50])#", "", trim($line));
+		self::$loop->line = false;
+		$output = $this->run($line, "console");
+		if($output != ""){
+			$mes = explode("\n", trim($output));
+			foreach($mes as $m){
+				console("[CMD] " . $m);
 			}
-		}else{
-			self::$loop->notify();
 		}
 	}
 
@@ -292,12 +291,16 @@ class ConsoleLoop extends Thread{
 
 	public $line;
 	public $stop;
-	public $base;
-	public $ev;
 	public $fp;
-	public function __construct(){
+
+	private ?SleeperNotifier $notifier;
+
+	public function __construct(?SleeperNotifier $notifier = null){
 		$this->line = false;
 		$this->stop = false;
+
+		$this->notifier = $notifier;
+
 		$this->start();
 	}
 
@@ -313,10 +316,9 @@ class ConsoleLoop extends Thread{
 		while(!$this->stop){
 			$this->line = $this->readLine();
 			if($this->stop) break;
-			$this->synchronized(function($t) {
-				$this->wait();
-				$this->line = false;
-			}, $this);
+			if($this->line !== false){
+				$this->notifier?->wakeupSleeper();
+			}
 		}
 
 		if(!extension_loaded("readline")){
