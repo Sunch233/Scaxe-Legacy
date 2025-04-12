@@ -14,7 +14,7 @@ abstract class RakNetDataPacket extends stdClass{
 
 	private $offset = 0;
 
-    public $PROTOCOL = 14;
+    public $PROTOCOL = ProtocolInfo::CURRENT_PROTOCOL;
 	
 	abstract public function encode();
 
@@ -38,6 +38,14 @@ abstract class RakNetDataPacket extends stdClass{
 	}
 
 	abstract public function pid();
+
+	public function getInternalPid() : int{
+		$rawProtocol = $this->PROTOCOL;
+		$this->PROTOCOL = ProtocolInfo::CURRENT_PROTOCOL;
+		$pid = (int) $this->pid();
+		$this->PROTOCOL = $rawProtocol;
+		return $pid;
+	}
 
 	protected function getLong($unsigned = false){
 		return Utils::readLong($this->get(8), $unsigned);
